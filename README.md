@@ -35,24 +35,15 @@ It demonstrates:
 
 ## Dependency model
 
-At the moment, this template keeps `@jshookmcp/extension-sdk` as a **relative local dependency** so it can be co-developed next to the main `jshookmcp` repository.
-
-Current default:
+This template now uses the published npm package:
 
 ```json
 {
-  "@jshookmcp/extension-sdk": "file:../jshookmcp/packages/extension-sdk"
+  "@jshookmcp/extension-sdk": "^0.1.2"
 }
 ```
 
-Recommended local layout:
-
-```text
-<workspace>/jshookmcp
-<workspace>/jshook_workflow_template
-```
-
-If you later publish or consume a released SDK package, replace that dependency in `package.json` with your registry version.
+That means the template can be cloned independently and installed directly with `pnpm install`.
 
 ## Install
 
