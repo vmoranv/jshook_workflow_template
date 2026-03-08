@@ -1,18 +1,18 @@
+import type {
+  WorkflowContract,
+  WorkflowNode,
+} from '@jshookmcp/extension-sdk/workflow';
 import { parallelNode, sequenceNode, toolNode } from '@jshookmcp/extension-sdk/workflow';
-
-/** @typedef {import('@jshookmcp/extension-sdk/workflow').WorkflowContract} WorkflowContract */
-/** @typedef {import('@jshookmcp/extension-sdk/workflow').WorkflowNode} WorkflowNode */
 
 const workflowId = 'workflow.template-capture.v1';
 
-/** @type {WorkflowContract} */
-const templateCaptureWorkflow = {
+const templateCaptureWorkflow: WorkflowContract = {
   kind: 'workflow-contract',
   version: 1,
   id: workflowId,
   displayName: 'Template Capture Workflow',
   description:
-    'Minimal MVP workflow that enables network capture, navigates to a page, collects surface data in parallel, extracts auth, and emits a summary.',
+    'TypeScript-first MVP workflow that enables network capture, navigates to a page, collects surface data in parallel, extracts auth, and emits a summary.',
   tags: ['workflow', 'template', 'parallel', 'capture'],
   timeoutMs: 10 * 60_000,
   defaultMaxConcurrency: 4,
@@ -26,8 +26,7 @@ const templateCaptureWorkflow = {
     const collectConsoleLogs = Boolean(ctx.getConfig(`${prefix}.collectConsoleLogs`, true));
     const logLimit = Number(ctx.getConfig(`${prefix}.consoleLogLimit`, 50));
 
-    /** @type {WorkflowNode[]} */
-    const collectSteps = [
+    const collectSteps: WorkflowNode[] = [
       toolNode('collect-local-storage', 'page_get_local_storage'),
       toolNode('collect-cookies', 'page_get_cookies'),
       toolNode('collect-requests', 'network_get_requests', {
@@ -97,4 +96,3 @@ const templateCaptureWorkflow = {
 };
 
 export default templateCaptureWorkflow;
-

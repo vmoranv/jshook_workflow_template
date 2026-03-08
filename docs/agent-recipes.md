@@ -1,43 +1,39 @@
 # Agent Recipes for `jshook_workflow_template`
 
-## 总原则
+## Core rule
 
-- **并行适合读，不适合改状态**。
-- **subagent 适合作为侧车分析**。
-- 主 agent 保持对浏览器、登录态、验证码与顺序动作的控制权。
+- parallelize reads, not shared page state mutations
+- let the main agent keep the active browser session
+- use subagents for sidecar analysis and report drafting
 
-## Recipe 1：主 agent 跑 workflow，subagent 写报告
+## Recipe 1: run workflow, then delegate analysis
 
-适合场景：你已经通过 `run_extension_workflow` 跑完模板工作流，拿到了请求列表、认证线索、控制台日志。
+Recommended split:
 
-推荐分工：
-
-- 主 agent：
+- main agent
   - `run_extension_workflow`
-  - 必要时补充 `network_get_response_body`
-- subagent：
-  - 整理 endpoint 清单
-  - 生成报告草稿
-  - 对请求分类（auth / data / admin / upload）
+  - optional `network_get_response_body`
+- subagent
+  - classify endpoints
+  - summarize auth and session artifacts
+  - draft report output
 
-## Recipe 2：主 agent 导航，subagent 做 bundle / 请求侧车分析
+## Recipe 2: main agent navigates, subagent reviews outputs
 
-适合场景：页面状态复杂，不想把浏览器交给旁路 agent。
+Recommended split:
 
-推荐分工：
-
-- 主 agent：
+- main agent
   - `page_navigate`
-  - `page_click`
+  - page actions
   - `network_get_requests`
-- subagent：
-  - 把请求整理成表格
-  - 标出疑似 auth header / jwt / signature 参数
-  - 撰写下一轮探测建议
+- subagent
+  - endpoint matrix
+  - auth header and signature review
+  - next-step probing suggestions
 
-## Recipe 3：什么时候用 `multi_tool_use.parallel`
+## Recipe 3: when to use parallel tool calls
 
-推荐并行：
+Good read-only candidates:
 
 - `extensions_list`
 - `search_tools`
@@ -45,11 +41,4 @@
 - `page_get_cookies`
 - `console_get_logs`
 
-不推荐并行：
-
-- `page_click` + `page_type`
-- 登录操作 + 二次验证
-- 会触发跳转的多个动作
-
-原因：这些动作依赖同一页面状态，互相抢占时序，容易让工作流变得不稳定。
-
+Avoid parallelizing any action that changes the current page state.
