@@ -1,23 +1,20 @@
-import type {
-  WorkflowContract,
-  WorkflowNode,
+import {
+  createWorkflow,
+  type WorkflowExecutionContext,
+  SequenceNodeBuilder,
+  toolNode,
 } from '@jshookmcp/extension-sdk/workflow';
-import { parallelNode, sequenceNode, toolNode } from '@jshookmcp/extension-sdk/workflow';
 
 const workflowId = 'workflow.template-capture.v1';
 
-const templateCaptureWorkflow: WorkflowContract = {
-  kind: 'workflow-contract',
-  version: 1,
-  id: workflowId,
-  displayName: 'Template Capture Workflow',
-  description:
+export default createWorkflow(workflowId, 'Template Capture Workflow')
+  .description(
     'TypeScript-first MVP workflow that enables network capture, navigates to a page, collects surface data in parallel, extracts auth, and emits a summary.',
-  tags: ['workflow', 'template', 'parallel', 'capture'],
-  timeoutMs: 10 * 60_000,
-  defaultMaxConcurrency: 4,
-
-  build(ctx) {
+  )
+  .tags(['workflow', 'template', 'parallel', 'capture'])
+  .timeoutMs(10 * 60_000)
+  .defaultMaxConcurrency(4)
+  .buildGraph((ctx: WorkflowExecutionContext) => {
     const prefix = 'workflows.templateCapture';
     const url = String(ctx.getConfig(`${prefix}.url`, 'https://example.com'));
     const waitUntil = String(ctx.getConfig(`${prefix}.waitUntil`, 'domcontentloaded'));
@@ -26,73 +23,51 @@ const templateCaptureWorkflow: WorkflowContract = {
     const collectConsoleLogs = Boolean(ctx.getConfig(`${prefix}.collectConsoleLogs`, true));
     const logLimit = Number(ctx.getConfig(`${prefix}.consoleLogLimit`, 50));
 
-    const collectSteps: WorkflowNode[] = [
-      toolNode('collect-local-storage', 'page_get_local_storage'),
-      toolNode('collect-cookies', 'page_get_cookies'),
-      toolNode('collect-requests', 'network_get_requests', {
-        input: { tail: requestTail },
-      }),
-      toolNode('collect-links', 'page_get_all_links'),
-    ];
+    const root = new SequenceNodeBuilder('template-capture-root');
 
-    if (collectConsoleLogs) {
-      collectSteps.push(
-        toolNode('collect-console-logs', 'console_get_logs', {
-          input: { limit: logLimit },
-        }),
-      );
-    }
+    root
+      .tool('enable-network', 'network_enable', { input: { enableExceptions: true } })
+      .tool('navigate', 'page_navigate', { input: { url, waitUntil } })
+      .parallel('collect-surface', (p) => {
+        p.maxConcurrency(maxConcurrency)
+          .failFast(false)
+          .tool('collect-local-storage', 'page_get_local_storage')
+          .tool('collect-cookies', 'page_get_cookies')
+          .tool('collect-requests', 'network_get_requests', { input: { tail: requestTail } })
+          .tool('collect-links', 'page_get_all_links');
 
-    const summary = {
-      status: 'template_capture_complete',
-      workflowId,
-      url,
-      waitUntil,
-      requestTail,
-      maxConcurrency,
-      collectConsoleLogs,
-    };
-
-    return sequenceNode('template-capture-root', [
-      toolNode('enable-network', 'network_enable', {
-        input: { enableExceptions: true },
-      }),
-      toolNode('navigate', 'page_navigate', {
-        input: { url, waitUntil },
-      }),
-      parallelNode('collect-surface', collectSteps, maxConcurrency, false),
-      toolNode('extract-auth', 'network_extract_auth', {
-        input: { minConfidence: 0.4 },
-      }),
-      toolNode('emit-summary', 'console_execute', {
+        if (collectConsoleLogs) {
+          p.tool('collect-console-logs', 'console_get_logs', { input: { limit: logLimit } });
+        }
+      })
+      .tool('extract-auth', 'network_extract_auth', { input: { minConfidence: 0.4 } })
+      .tool('emit-summary', 'console_execute', {
         input: {
-          expression: `(${JSON.stringify(summary)})`,
+          expression: `(${JSON.stringify({
+            status: 'template_capture_complete',
+            workflowId,
+            url,
+            waitUntil,
+            requestTail,
+            maxConcurrency,
+            collectConsoleLogs,
+          })})`,
         },
-      }),
-    ]);
-  },
+      });
 
-  onStart(ctx) {
-    ctx.emitMetric('workflow_runs_total', 1, 'counter', {
-      workflowId,
-      stage: 'start',
-    });
-  },
-
-  onFinish(ctx) {
-    ctx.emitMetric('workflow_runs_total', 1, 'counter', {
-      workflowId,
-      stage: 'finish',
-    });
-  },
-
-  onError(ctx, error) {
+    return root;
+  })
+  .onStart((ctx) => {
+    ctx.emitMetric('workflow_runs_total', 1, 'counter', { workflowId, stage: 'start' });
+  })
+  .onFinish((ctx) => {
+    ctx.emitMetric('workflow_runs_total', 1, 'counter', { workflowId, stage: 'finish' });
+  })
+  .onError((ctx, error) => {
     ctx.emitMetric('workflow_errors_total', 1, 'counter', {
       workflowId,
       stage: 'error',
       error: error.name,
     });
-  },
-};
-
-export default templateCaptureWorkflow;
+  })
+  .build();
