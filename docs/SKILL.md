@@ -1,124 +1,111 @@
-# Workflow Development Guide
+# jshook Workflow Template - Agent Skill Documentation
 
-## Overview
+## For Agents Using This Template
 
-This template demonstrates how to build a reusable jshook MCP workflow.
+This template provides a reusable workflow scaffold for jshook MCP.
 
-## Key Features
-
-- **TypeScript-first**: Full type safety with modern TypeScript
-- **Declarative workflow definition**: Clear, composable workflow contracts
-- **Built-in tool chain integration**: Leverage jshook's extensive tool ecosystem
-- **Promise.all parallel reads**: Efficient batch operations for read-only tasks
-- **Minimal permissions**: Security-first approach with least-privilege access
-
-## Quick Start
-
-```bash
-# Install dependencies
-pnpm install
-
-# Type check
-pnpm run check
-
-# Build
-pnpm run build
-```
-
-## Project Structure
+## Workflow ID
 
 ```
-.
-├── workflow.ts          # Workflow entry point
-├── package.json         # Dependencies and scripts
-├── tsconfig.json        # TypeScript configuration
-├── meta.yaml            # Extension metadata for registry
-└── docs/
-    └── SKILL.md         # This file - development guide
+workflow.template.v1
 ```
 
-## Best Practices
+## Available Configuration
 
-### 1. Parallelize Reads, Not Writes
+```yaml
+workflows.template.*
+```
 
-Good candidates for parallel execution:
-- `extensions_list`
-- `page_get_local_storage`
-- `page_get_cookies`
-- `network_get_requests`
-
-Avoid parallelizing actions that mutate shared page state.
-
-### 2. Let Main Agent Control Browser Session
-
-Your workflow should not take control of the browser away from the main agent. Use sidecar analysis instead.
-
-### 3. Use Subagents for Analysis
-
-Recommended split:
-- **Main agent**: Browser control, navigation, data collection
-- **Subagent**: Endpoint classification, auth signal analysis, report drafting
-
-## Example Workflow Patterns
-
-### Pattern 1: Run Workflow, Then Delegate Analysis
+## Input Parameters
 
 ```typescript
-// Main agent
-const result = await ctx.runExtensionWorkflow({
-  workflowId: 'my-workflow',
-  config: { target: 'https://example.com' }
-});
-
-// Subagent for analysis
-const analysis = await subagent.analyze(result);
+{
+  targetUrl?: string,      // Target URL to analyze (default: current page)
+  collectAuth?: boolean,   // Extract auth credentials (default: true)
+  collectLinks?: boolean,  // Collect page links (default: true)
+}
 ```
 
-### Pattern 2: Main Agent Navigates, Subagent Reviews
+## Output Structure
 
 ```typescript
-// Main agent
-await ctx.pageNavigate('https://example.com');
-await ctx.pageClick('#submit');
-const requests = await ctx.networkGetRequests();
-
-// Subagent
-const report = await subagent.generateReport(requests);
+{
+  url: string,             // Analyzed URL
+  timestamp: string,       // Analysis timestamp
+  auth: {                  // Extracted auth (if collectAuth=true)
+    tokens: array,
+    cookies: array,
+    headers: array
+  },
+  links: array,            // Page links (if collectLinks=true)
+  localStorage: object,    // LocalStorage contents
+  requests: array          // Network requests captured
+}
 ```
 
-## Registration
-
-To register your workflow in the jshook MCP extension registry:
-
-1. Ensure your repository has:
-   - `meta.yaml` with name, description, author, tags
-   - Public accessibility
-   - Working `pnpm run check` and `pnpm run build`
-
-2. Create an issue at [vmoranv/jshookmcpextension](https://github.com/vmoranv/jshookmcpextension/issues/new?template=register-extension.yml)
-
-3. The sync workflow will automatically add your workflow to the registry on issue close
-
-## Example Usage
+## SDK Functions Used
 
 ```typescript
-import { defineWorkflow } from '@jshook/sdk';
+import { defineWorkflow } from '@jshookmcp/extension-sdk';
 
 export default defineWorkflow({
-  id: 'my-workflow.v1',
-  name: 'My Workflow',
+  id: 'workflow.template.v1',
+  name: 'Template Workflow',
   description: 'A sample workflow',
   
-  async execute(ctx) {
-    // Your workflow logic here
-    await ctx.pageNavigate('https://example.com');
-    // ...
+  async execute(ctx, config) {
+    // Step 1: Enable network monitoring
+    await ctx.network_enable();
+    
+    // Step 2: Navigate
+    await ctx.page_navigate(config.targetUrl);
+    
+    // Step 3: Parallel collection
+    const [storage, cookies, requests] = await Promise.all([
+      ctx.page_get_local_storage(),
+      ctx.page_get_cookies(),
+      ctx.network_get_requests()
+    ]);
+    
+    // Step 4: Extract auth
+    const auth = await ctx.network_extract_auth();
+    
+    return { storage, cookies, requests, auth };
   },
 });
 ```
 
-## Resources
+## Parallel Read Pattern
 
-- [jshook Documentation](https://github.com/vmoranv/jshookmcp)
-- [MCP Extension Registry](https://github.com/vmoranv/jshookmcpextension)
-- [Example Workflows](https://github.com/vmoranv?tab=repositories&q=jshook_workflow_)
+Safe to parallelize (Promise.all):
+- `page_get_local_storage`
+- `page_get_cookies`
+- `network_get_requests`
+- `page_get_all_links`
+
+Do NOT parallelize:
+- `page_click` + `page_type` (state mutations)
+- Multiple `page_navigate` calls
+
+## Build & Verify
+
+```bash
+pnpm install
+pnpm run build   # Outputs dist/workflow.js
+pnpm run check   # TypeScript type check
+```
+
+## Load Into jshook
+
+1. Set env: `MCP_WORKFLOW_ROOTS=/path/to/template`
+2. In jshook: `extensions_reload`
+3. Verify: `list_extension_workflows` shows the workflow
+4. Run: `run_extension_workflow --workflow-id workflow.template.v1`
+
+## Example Invocation
+
+```
+run_extension_workflow 
+  --workflow-id workflow.template.v1 
+  --config '{"targetUrl":"https://example.com","collectAuth":true}'
+```
