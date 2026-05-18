@@ -7,22 +7,23 @@ This template provides a reusable workflow scaffold for jshook MCP.
 ## Workflow ID
 
 ```
-workflow.template.v1
+workflow.template-capture.v1
 ```
 
 ## Available Configuration
 
 ```yaml
-workflows.template.*
+workflows.templateCapture.*
 ```
 
 ## Input Parameters
 
 ```typescript
 {
-  targetUrl?: string,      // Target URL to analyze (default: current page)
-  collectAuth?: boolean,   // Extract auth credentials (default: true)
-  collectLinks?: boolean,  // Collect page links (default: true)
+  url?: string,                 // Target URL to analyze
+  waitUntil?: string,           // page_navigate waitUntil mode
+  requestTail?: number,         // network_get_requests tail size
+  collectConsoleLogs?: boolean, // Whether to capture console logs
 }
 ```
 
@@ -30,56 +31,38 @@ workflows.template.*
 
 ```typescript
 {
-  url: string,             // Analyzed URL
-  timestamp: string,       // Analysis timestamp
-  auth: {                  // Extracted auth (if collectAuth=true)
-    tokens: array,
-    cookies: array,
-    headers: array
-  },
-  links: array,            // Page links (if collectLinks=true)
-  localStorage: object,    // LocalStorage contents
-  requests: array          // Network requests captured
+  status: string,
+  workflowId: string,
+  url: string,
+  waitUntil: string,
+  requestTail: number,
+  maxConcurrency: number,
+  collectConsoleLogs: boolean
 }
 ```
 
 ## SDK Functions Used
 
 ```typescript
-import { defineWorkflow } from '@jshookmcp/extension-sdk';
+import { defineWorkflow, sequenceStep } from '@jshookmcp/extension-sdk/workflow';
 
-export default defineWorkflow({
-  id: 'workflow.template.v1',
-  name: 'Template Workflow',
-  description: 'A sample workflow',
-  
-  async execute(ctx, config) {
-    // Step 1: Enable network monitoring
-    await ctx.network_enable();
-    
-    // Step 2: Navigate
-    await ctx.page_navigate(config.targetUrl);
-    
-    // Step 3: Parallel collection
-    const [storage, cookies, requests] = await Promise.all([
-      ctx.page_get_local_storage(),
-      ctx.page_get_cookies(),
-      ctx.network_get_requests()
-    ]);
-    
-    // Step 4: Extract auth
-    const auth = await ctx.network_extract_auth();
-    
-    return { storage, cookies, requests, auth };
-  },
-});
+export default defineWorkflow('workflow.template-capture.v1', 'Template Capture Workflow', (workflow) =>
+  workflow.buildGraph(() =>
+    sequenceStep('capture-root', (root) => {
+      root.tool('enable-network', 'network_enable');
+      root.tool('navigate', 'page_navigate', {
+        input: { url: 'https://example.com', waitUntil: 'networkidle' },
+      });
+    }),
+  ),
+);
 ```
 
 ## Parallel Read Pattern
 
 Safe to parallelize (Promise.all):
-- `page_get_local_storage`
-- `page_get_cookies`
+- `page_local_storage`
+- `page_cookies`
 - `network_get_requests`
 - `page_get_all_links`
 
@@ -100,12 +83,70 @@ pnpm run check   # TypeScript type check
 1. Set env: `MCP_WORKFLOW_ROOTS=/path/to/template`
 2. In jshook: `extensions_reload`
 3. Verify: `list_extension_workflows` shows the workflow
-4. Run: `run_extension_workflow --workflow-id workflow.template.v1`
+4. Run: `run_extension_workflow --workflow-id workflow.template-capture.v1`
 
 ## Example Invocation
 
 ```
 run_extension_workflow 
-  --workflow-id workflow.template.v1 
-  --config '{"targetUrl":"https://example.com","collectAuth":true}'
+  --workflow-id workflow.template-capture.v1 
+  --config '{"workflows.templateCapture.url":"https://example.com","workflows.templateCapture.collectConsoleLogs":true}'
 ```
+*** Add File: D:\coding\reverse\jshook_workflow_template\.github\workflows\ci.yml
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  cross-platform:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [22]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Enable Corepack pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run check
+
+      - name: Build
+        run: pnpm run build
