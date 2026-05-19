@@ -1,6 +1,7 @@
 name: template
 description: JSHook workflow for template
 author: vmoranv
+source_repo: https://github.com/vmoranv/jshook_workflow_template
 tags:
   - workflow
   - template
